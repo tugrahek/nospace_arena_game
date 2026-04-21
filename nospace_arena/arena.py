@@ -136,13 +136,22 @@ class Arena:
         self.free_cells -= len(captured)
         return len(captured), captured
 
-    def draw(self, surface: pygame.Surface, theme, pulse: float, flash_ratio: float, capture_progress: float = 1.0) -> None:
+    def draw(self, surface: pygame.Surface, theme, pulse: float, flash_ratio: float, capture_progress: float = 1.0, danger_ratio: float = 0.0) -> None:
         play_rect = pygame.Rect(0, 0, SCREEN_WIDTH, GRID_HEIGHT * TILE_SIZE)
         pygame.draw.rect(surface, theme.free_area, play_rect)
+        grid_color = blend(theme.border, theme.free_area, 0.82)
+        for x in range(0, SCREEN_WIDTH, TILE_SIZE * 4):
+            alpha = 22 if (x // TILE_SIZE) % 10 else 34
+            pygame.draw.line(surface, blend(grid_color, theme.accent, 0.12), (x, 0), (x, play_rect.bottom), 1 if alpha < 30 else 2)
+        for y in range(0, play_rect.height, TILE_SIZE * 4):
+            alpha = 20 if (y // TILE_SIZE) % 10 else 30
+            pygame.draw.line(surface, blend(grid_color, theme.overlay, 0.14), (0, y), (play_rect.right, y), 1 if alpha < 26 else 2)
+
         previous_clip = surface.get_clip()
         surface.set_clip(play_rect)
 
-        trail_color = tuple(min(255, int(theme.trail[index] * (0.88 + 0.18 * pulse))) for index in range(3))
+        trail_boost = 1.0 + danger_ratio * 0.3
+        trail_color = tuple(min(255, int(theme.trail[index] * (0.94 + 0.24 * pulse) * trail_boost)) for index in range(3))
         glow_color = theme.trail_glow
         capture_lookup = self.recent_capture_lookup if (flash_ratio > 0 or capture_progress < 1.0) else {}
 
@@ -154,17 +163,25 @@ class Arena:
                 rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
 
                 if cell == TRAIL:
+                    halo = rect.inflate(8, 8)
+                    pygame.draw.rect(surface, blend(glow_color, theme.free_area, 0.35), halo, border_radius=3)
                     pygame.draw.rect(surface, glow_color, rect.inflate(4, 4), border_radius=2)
-                    pygame.draw.rect(surface, trail_color, rect)
+                    pygame.draw.rect(surface, trail_color, rect, border_radius=2)
+                    pygame.draw.rect(surface, (255, 255, 255), rect.inflate(-2, -2), 1, border_radius=2)
                     continue
 
                 color = theme.solid_area
                 reveal = capture_lookup.get((x, y))
                 if reveal is not None and capture_progress < 1.0 and capture_progress < reveal:
-                    color = blend(theme.free_area, theme.solid_area, 0.34)
+                    wave = max(0.0, min(1.0, (capture_progress - max(0.0, reveal - 0.15)) / 0.15))
+                    color = blend(theme.free_area, theme.solid_area, 0.18 + wave * 0.62)
                 elif reveal is not None and flash_ratio > 0:
                     color = blend(color, theme.overlay, 0.38 + flash_ratio * 0.52)
+                elif cell == SOLID and 0 < x < self.width - 1 and 0 < y < self.height - 1:
+                    color = blend(color, theme.overlay, 0.08 + pulse * 0.05)
                 pygame.draw.rect(surface, color, rect)
 
         surface.set_clip(previous_clip)
+        pygame.draw.rect(surface, blend(theme.border, theme.overlay, 0.26), play_rect.inflate(-2, -2), 1)
         pygame.draw.rect(surface, theme.border, play_rect, 3)
+        pygame.draw.rect(surface, blend(theme.border, (255, 255, 255), 0.2), play_rect.inflate(-8, -8), 1)

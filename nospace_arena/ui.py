@@ -31,6 +31,11 @@ class Menu:
         return self.items[self.index]
 
 
+def blend(color_a, color_b, ratio: float):
+    ratio = max(0.0, min(1.0, ratio))
+    return tuple(int(color_a[index] * (1.0 - ratio) + color_b[index] * ratio) for index in range(3))
+
+
 def wrap_text(font: pygame.font.Font, text: str, max_width: int) -> list[str]:
     words = text.split()
     lines: list[str] = []
@@ -57,8 +62,22 @@ def draw_wrapped_text(surface: pygame.Surface, font: pygame.font.Font, text: str
     return y
 
 
+def glow_text(surface: pygame.Surface, font: pygame.font.Font, text: str, color, pos: tuple[int, int], glow_color=None) -> pygame.Rect:
+    glow_color = glow_color or color
+    glow = font.render(text, True, glow_color)
+    glow.set_alpha(80)
+    for ox, oy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        surface.blit(glow, (pos[0] + ox, pos[1] + oy))
+    text_surf = font.render(text, True, color)
+    return surface.blit(text_surf, pos)
+
+
 def draw_themed_background(surface: pygame.Surface, theme, tick: float) -> None:
     surface.fill(theme.background)
+    vignette = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    vignette.fill((0, 0, 0, 0))
+    pygame.draw.rect(vignette, (0, 0, 0, 72), vignette.get_rect(), 24)
+    surface.blit(vignette, (0, 0))
     if theme.pattern == "stars":
         star_rng = random.Random(11)
         for _ in range(85):
@@ -68,13 +87,21 @@ def draw_themed_background(surface: pygame.Surface, theme, tick: float) -> None:
             color = tuple(min(255, c + star_rng.randint(0, 35)) for c in theme.particle)
             surface.fill(color, pygame.Rect(x, y, size, size))
     elif theme.pattern == "scanlines":
-        for y in range(0, SCREEN_HEIGHT, 5):
-            pygame.draw.line(surface, (0, 0, 0), (0, y), (SCREEN_WIDTH, y), 1)
-        for x in range(0, SCREEN_WIDTH, 80):
-            alpha = 40 + int((math.sin(tick * 1.4 + x * 0.03) + 1.0) * 25)
-            overlay = pygame.Surface((2, SCREEN_HEIGHT), pygame.SRCALPHA)
-            overlay.fill((*theme.accent, alpha))
-            surface.blit(overlay, (x, 0))
+        for y in range(0, SCREEN_HEIGHT, 6):
+            line_color = tuple(max(0, channel - 8) for channel in theme.background)
+            pygame.draw.line(surface, line_color, (0, y), (SCREEN_WIDTH, y), 1)
+        for x in range(0, SCREEN_WIDTH, 40):
+            brightness = 0.08 + (math.sin(tick * 1.6 + x * 0.025) + 1.0) * 0.05
+            color = tuple(min(255, int(theme.border[index] * brightness + theme.background[index] * (1.0 - brightness))) for index in range(3))
+            pygame.draw.line(surface, color, (x, 0), (x, SCREEN_HEIGHT), 1)
+        for y in range(0, SCREEN_HEIGHT, 40):
+            brightness = 0.06 + (math.sin(tick * 1.25 + y * 0.018) + 1.0) * 0.04
+            color = tuple(min(255, int(theme.overlay[index] * brightness + theme.background[index] * (1.0 - brightness))) for index in range(3))
+            pygame.draw.line(surface, color, (0, y), (SCREEN_WIDTH, y), 1)
+        scan_y = int((tick * 90) % SCREEN_HEIGHT)
+        overlay = pygame.Surface((SCREEN_WIDTH, 14), pygame.SRCALPHA)
+        overlay.fill((*theme.accent, 22))
+        surface.blit(overlay, (0, scan_y))
     elif theme.pattern == "dots":
         for y in range(14, SCREEN_HEIGHT, 24):
             for x in range(14, SCREEN_WIDTH, 24):
@@ -109,7 +136,11 @@ def draw_notice(surface: pygame.Surface, fonts: FontSet, theme, text: str) -> No
 
 def draw_menu(surface: pygame.Surface, fonts: FontSet, menu: Menu, theme, footer: str) -> None:
     title = fonts.title.render(GAME_TITLE, True, theme.text)
-    surface.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, 62)))
+    title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 62))
+    glow = fonts.title.render(GAME_TITLE, True, theme.border)
+    glow.set_alpha(90)
+    surface.blit(glow, glow.get_rect(center=(SCREEN_WIDTH // 2, 62)))
+    surface.blit(title, title_rect)
 
     panel = pygame.Rect(118, 126, SCREEN_WIDTH - 236, 434)
     _draw_panel(surface, panel, theme)
@@ -231,39 +262,43 @@ def draw_hud(surface: pygame.Surface, fonts: FontSet, theme, session, coins: int
     hud_rect = pygame.Rect(0, GRID_HEIGHT * TILE_SIZE, SCREEN_WIDTH, HUD_HEIGHT)
     pygame.draw.rect(surface, theme.hud_bg, hud_rect)
     pygame.draw.line(surface, theme.border, (0, hud_rect.y), (SCREEN_WIDTH, hud_rect.y), 2)
+    pygame.draw.rect(surface, tuple(max(0, channel - 12) for channel in theme.background), hud_rect.inflate(-12, -14), 1, border_radius=8)
 
     char_name = CHARACTERS[session.character_key].name
     theme_name = THEMES[session.theme_key].name
     difficulty_name = DIFFICULTIES[session.difficulty_key].name
     boost_name = BOOSTS[session.equipped_boost_key].name if session.equipped_boost_key in BOOSTS else "No Boost"
 
-    line1 = f"LEVEL {session.level}   LIVES {session.lives}   SCORE {session.score}   COINS {coins}"
+    line1 = f"SCORE {session.score}   LIVES {session.lives}   LEVEL {session.level}   COINS {coins}"
     line2 = f"CAPTURE {session.capture_percent():5.1f}%   TARGET {(1.0 - TARGET_FREE_RATIO) * 100:5.1f}%   LAST +{session.last_capture_points}"
     line3 = f"{char_name} | {theme_name} | {difficulty_name} | {boost_name}"
     line4 = session.active_effect_label()
 
-    surface.blit(fonts.body.render(line1, True, theme.text), (16, hud_rect.y + 10))
-    surface.blit(fonts.small.render(line2, True, theme.text), (16, hud_rect.y + 36))
+    glow_text(surface, fonts.body, line1, theme.text, (16, hud_rect.y + 10), theme.border)
+    glow_text(surface, fonts.small, line2, theme.text, (16, hud_rect.y + 36), theme.overlay)
     draw_wrapped_text(surface, fonts.tiny, line3, theme.accent, pygame.Rect(16, hud_rect.y + 58, SCREEN_WIDTH - 32, 16), 14)
     draw_wrapped_text(surface, fonts.tiny, line4, theme.text, pygame.Rect(16, hud_rect.y + 72, SCREEN_WIDTH - 32, 16), 14)
 
     combo_bar = pygame.Rect(16, hud_rect.y + 94, 220, 10)
+    pygame.draw.rect(surface, tuple(max(0, channel - 10) for channel in theme.background), combo_bar.inflate(2, 2), border_radius=6)
     pygame.draw.rect(surface, theme.background, combo_bar, border_radius=5)
     combo_fill = combo_bar.copy()
     combo_fill.width = int(combo_bar.width * min(1.0, session.combo_timer / session.combo_window()))
     pygame.draw.rect(surface, theme.accent, combo_fill, border_radius=5)
     combo_label = f"Combo x{session.combo_multiplier():.2f}  Chain {session.combo_chain}"
-    surface.blit(fonts.tiny.render(combo_label, True, theme.text), (16, hud_rect.y + 108))
+    glow_text(surface, fonts.tiny, combo_label, theme.text, (16, hud_rect.y + 108), theme.accent)
 
     danger_bar = pygame.Rect(264, hud_rect.y + 94, 220, 10)
+    pygame.draw.rect(surface, tuple(max(0, channel - 10) for channel in theme.background), danger_bar.inflate(2, 2), border_radius=6)
     pygame.draw.rect(surface, theme.background, danger_bar, border_radius=5)
     danger_fill = danger_bar.copy()
     danger_fill.width = int(danger_bar.width * session.danger_level)
     pygame.draw.rect(surface, theme.danger, danger_fill, border_radius=5)
-    surface.blit(fonts.tiny.render("Danger", True, theme.text), (264, hud_rect.y + 108))
+    glow_text(surface, fonts.tiny, "Danger", theme.text, (264, hud_rect.y + 108), theme.danger)
 
     shot_status = "READY" if session.player.can_shoot() and session.shot_cooldown <= 0 else "CHARGING" if session.player.can_shoot() else "OFF"
-    surface.blit(fonts.small.render(f"Shots {shot_status}", True, theme.text), (SCREEN_WIDTH - 180, hud_rect.y + 92))
+    shot_color = theme.accent if shot_status == "READY" else theme.text if shot_status == "CHARGING" else blend(theme.text, theme.background, 0.35)
+    glow_text(surface, fonts.small, f"Shots {shot_status}", shot_color, (SCREEN_WIDTH - 180, hud_rect.y + 92), theme.border)
 
     if session.toast:
         toast_rect = pygame.Rect(500, hud_rect.y + 108, SCREEN_WIDTH - 516, 24)
@@ -274,8 +309,9 @@ def draw_danger_overlay(surface: pygame.Surface, theme, danger_level: float) -> 
     if danger_level <= 0:
         return
     overlay = pygame.Surface((SCREEN_WIDTH, GRID_HEIGHT * TILE_SIZE), pygame.SRCALPHA)
-    alpha = int(90 * danger_level)
-    pygame.draw.rect(overlay, (*theme.danger, alpha), overlay.get_rect(), 6)
+    alpha = int(52 * danger_level)
+    overlay.fill((*theme.danger, alpha // 3))
+    pygame.draw.rect(overlay, (*theme.danger, alpha + 20), overlay.get_rect(), 6)
     surface.blit(overlay, (0, 0))
 
 

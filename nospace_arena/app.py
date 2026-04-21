@@ -657,6 +657,7 @@ class NoSpaceArenaApp:
             self.session.pulse(),
             self.session.flash_ratio(),
             self.session.capture_progress(),
+            self.session.danger_level,
         )
         for powerup in self.session.powerups:
             powerup.draw(surface)

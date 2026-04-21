@@ -78,6 +78,7 @@ class GameSession:
         self.last_capture_risk = 0
         self.last_capture_percent = 0.0
         self.draw_exposure_time = 0.0
+        self.trail_particle_timer = 0.0
         self.idle_timer = 0.0
         self.danger_level = 0.0
         self.pending_coin_reward = 0
@@ -163,6 +164,7 @@ class GameSession:
         self.last_capture_risk = 0
         self.last_capture_percent = 0.0
         self.draw_exposure_time = 0.0
+        self.trail_particle_timer = 0.0
         self.idle_timer = 0.0
         self.danger_level = 0.0
         self.level_reward_granted = False
@@ -252,6 +254,7 @@ class GameSession:
         self.projectiles.clear()
         self.shot_cooldown = 0.0
         self.draw_exposure_time = 0.0
+        self.trail_particle_timer = 0.0
         self.danger_level = 0.0
         for enemy in self.enemies:
             x, y = self._random_enemy_position()
@@ -549,13 +552,20 @@ class GameSession:
         result = self.player.update(dt, self.arena, input_dir)
         if self.player.drawing:
             self.draw_exposure_time += dt
+            self.trail_particle_timer -= dt
             if self.last_move_sound > 0:
                 self.last_move_sound -= dt
             if input_dir != (0, 0) and self.last_move_sound <= 0:
                 self.audio.play("move")
                 self.last_move_sound = 0.10
+            if self.trail_particle_timer <= 0:
+                head_x = self.player.x * TILE_SIZE + TILE_SIZE // 2
+                head_y = self.player.y * TILE_SIZE + TILE_SIZE // 2
+                self.particles.emit_trail(head_x, head_y, self.profile.trail, self.player.facing, self.danger_level)
+                self.trail_particle_timer = 0.028 if self.danger_level > 0.5 else 0.045
         else:
             self.draw_exposure_time = 0.0
+            self.trail_particle_timer = 0.0
             self.last_move_sound = max(0.0, self.last_move_sound - dt)
 
         if result == "dead":

@@ -1,16 +1,16 @@
 {
   "character": "glider",
   "arena_theme": "neon",
-  "selected_level": 4,
+  "selected_level": 1,
   "difficulty": "relaxed",
   "assist_mode": true,
   "sound_enabled": false,
   "music_enabled": true,
   "volume": 0.6000000000000001,
   "screen_shake": true,
-  "high_score": 318358,
+  "high_score": 387008,
   "best_level": 5,
-  "coins": 132,
+  "coins": 168,
   "unlocked_characters": [
     "glider",
     "spark"
@@ -22,8 +22,8 @@
   "unlocked_boosts": [],
   "equipped_boost": "",
   "level_scores": {
-    "2": 318358,
-    "3": 281351,
+    "2": 353385,
+    "3": 387008,
     "4": 292829,
     "1": 131363,
     "5": 292829

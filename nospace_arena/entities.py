@@ -23,6 +23,15 @@ def world_from_cell(cell_x: int, cell_y: int) -> tuple[float, float]:
     return cell_x * TILE_SIZE + TILE_SIZE / 2, cell_y * TILE_SIZE + TILE_SIZE / 2
 
 
+def draw_soft_glow(surface: pygame.Surface, x: float, y: float, color, radius: float, alpha: int) -> None:
+    radius = max(2, int(radius))
+    sprite = pygame.Surface((radius * 4, radius * 4), pygame.SRCALPHA)
+    center = radius * 2
+    pygame.draw.circle(sprite, (*color, max(10, alpha // 3)), (center, center), radius + 5)
+    pygame.draw.circle(sprite, (*color, max(24, alpha)), (center, center), radius)
+    surface.blit(sprite, (x - center, y - center))
+
+
 class Player:
     def __init__(self, start_x: int, start_y: int, profile):
         self.start_x = start_x
@@ -42,6 +51,8 @@ class Player:
     def reset_position(self) -> None:
         self.x = self.start_x
         self.y = self.start_y
+        self.visual_x = float(self.x)
+        self.visual_y = float(self.y)
         self.drawing = False
         self.trail_start_cell = None
 
@@ -123,14 +134,23 @@ class Player:
                     else:
                         result = "dead"
                         break
+        blend = min(1.0, dt * 18.0)
+        self.visual_x += (self.x - self.visual_x) * blend
+        self.visual_y += (self.y - self.visual_y) * blend
         return result
 
     def draw(self, surface: pygame.Surface, pulse: float, danger_ratio: float = 0.0) -> None:
-        cx = self.x * TILE_SIZE + TILE_SIZE // 2
-        cy = self.y * TILE_SIZE + TILE_SIZE // 2
+        cx = int(self.visual_x * TILE_SIZE + TILE_SIZE // 2)
+        cy = int(self.visual_y * TILE_SIZE + TILE_SIZE // 2)
         radius = max(4, TILE_SIZE // 2)
         primary = self.profile.primary
         secondary = self.profile.secondary
+        trail_core = tuple(min(255, int(channel * (1.08 + danger_ratio * 0.32))) for channel in self.profile.trail)
+        aura_alpha = int(36 + pulse * 20 + danger_ratio * 48)
+
+        draw_soft_glow(surface, cx, cy, self.profile.trail, radius + 10 + pulse * 2, aura_alpha)
+        if self.drawing:
+            draw_soft_glow(surface, cx, cy, trail_core, radius + 15 + danger_ratio * 5, int(42 + danger_ratio * 60))
 
         if self.profile.style == "diamond":
             points = [(cx, cy - radius - 2), (cx + radius + 2, cy), (cx, cy + radius + 2), (cx - radius - 2, cy)]
@@ -158,17 +178,27 @@ class Player:
             pygame.draw.circle(surface, secondary, (cx, cy), radius + 2)
             pygame.draw.circle(surface, primary, (cx, cy), radius)
 
+        nose_x = cx + self.facing[0] * (radius + 4)
+        nose_y = cy + self.facing[1] * (radius + 4)
+        pygame.draw.line(surface, (255, 255, 255), (cx, cy), (nose_x, nose_y), 2)
+        pygame.draw.circle(surface, (255, 255, 255), (nose_x, nose_y), 2)
+        pygame.draw.circle(surface, (10, 16, 26), (cx, cy), max(1, radius - 3), 1)
+
         if self.drawing:
-            glow_radius = int(radius + 5 + pulse * 2 + danger_ratio * 6)
-            pygame.draw.circle(surface, self.profile.trail, (cx, cy), glow_radius, 1)
+            glow_radius = int(radius + 7 + pulse * 2 + danger_ratio * 7)
+            pygame.draw.circle(surface, trail_core, (cx, cy), glow_radius, 2)
+            pygame.draw.circle(surface, (255, 255, 255), (cx, cy), max(3, radius - 1), 1)
         if self.can_shoot():
+            draw_soft_glow(surface, cx, cy, (255, 120, 120), radius + 13 + pulse * 2, 38)
             pygame.draw.circle(surface, (255, 170, 170), (cx, cy), int(radius + 9 + pulse * 2), 1)
         if self.has_shield():
+            draw_soft_glow(surface, cx, cy, (255, 226, 132), radius + 14 + pulse * 2, 36)
             shield_radius = int(radius + 7 + pulse * 1.5)
             pygame.draw.circle(surface, (255, 244, 140), (cx, cy), shield_radius, 1)
         if danger_ratio > 0:
+            draw_soft_glow(surface, cx, cy, (255, 96, 96), radius + 18 + pulse * 2 + danger_ratio * 5, int(24 + danger_ratio * 48))
             warning_radius = int(radius + 10 + pulse * 3 + danger_ratio * 8)
-            pygame.draw.circle(surface, (255, 110, 110), (cx, cy), warning_radius, 1)
+            pygame.draw.circle(surface, (255, 110, 110), (cx, cy), warning_radius, 2)
 
 
 class Enemy:
@@ -452,6 +482,11 @@ class Enemy:
             color = (190, 235, 255)
             ring_color = (255, 255, 255)
 
+        pulse_alpha = 20 + int((math.sin(self.animation_time * 4.6) + 1.0) * 18)
+        draw_soft_glow(surface, center[0], center[1], ring_color, outer + 12, pulse_alpha)
+        if self.intent in {"intercept", "cutoff", "pressure"}:
+            draw_soft_glow(surface, center[0], center[1], color, outer + 15, 26)
+
         if self.behavior == "tank":
             pygame.draw.circle(surface, ring_color, center, outer + 3)
             pygame.draw.circle(surface, (18, 18, 24), center, outer)
@@ -474,8 +509,8 @@ class Enemy:
             pygame.draw.circle(surface, (18, 18, 24), center, max(2, inner - 3))
 
         eye_offset = max(2, inner // 3)
-        pygame.draw.circle(surface, color, (center[0] - eye_offset, center[1] - 1), 1)
-        pygame.draw.circle(surface, color, (center[0] + eye_offset, center[1] - 1), 1)
+        pygame.draw.circle(surface, (255, 245, 245), (center[0] - eye_offset, center[1] - 1), 2)
+        pygame.draw.circle(surface, (255, 245, 245), (center[0] + eye_offset, center[1] - 1), 2)
         if self.intent in {"intercept", "cutoff", "pressure"} and self.stun_timer <= 0 and self.frozen_timer <= 0:
             pygame.draw.circle(surface, color, center, outer + 6, 1)
 
@@ -513,6 +548,7 @@ class PowerUp:
         cy = self.y * TILE_SIZE + TILE_SIZE // 2 + int(math.sin(self.bob_time * 5.0) * 2)
         radius = max(4, TILE_SIZE // 2)
         glow_radius = int(radius + 4 + (math.sin(self.bob_time * 7.0) + 1.0) * 1.4)
+        draw_soft_glow(surface, cx, cy, self.color, glow_radius + 6, 28)
         pygame.draw.circle(surface, self.color, (cx, cy), glow_radius, 1)
         pygame.draw.circle(surface, self.color, (cx, cy), radius + 1)
         pygame.draw.circle(surface, (18, 18, 18), (cx, cy), max(2, radius - 1))

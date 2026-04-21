@@ -32,9 +32,14 @@ class Projectile:
     def draw(self, surface: pygame.Surface) -> None:
         center = (int(self.x), int(self.y))
         glow = max(4, int(self.radius) + 4)
-        pygame.draw.circle(surface, (*self.color, 30), center, glow)
+        sprite = pygame.Surface((glow * 4, glow * 4), pygame.SRCALPHA)
+        mid = glow * 2
+        pygame.draw.circle(sprite, (*self.color, 26), (mid, mid), glow + 4)
+        pygame.draw.circle(sprite, (*self.color, 72), (mid, mid), glow)
+        surface.blit(sprite, (center[0] - mid, center[1] - mid))
         pygame.draw.circle(surface, self.color, center, int(self.radius) + 2)
         pygame.draw.circle(surface, (255, 255, 255), center, int(self.radius), 1)
         trail_x = int(self.x - self.vx * 0.02)
         trail_y = int(self.y - self.vy * 0.02)
-        pygame.draw.line(surface, self.color, (trail_x, trail_y), center, 2)
+        pygame.draw.line(surface, (255, 255, 255), (trail_x, trail_y), center, 1)
+        pygame.draw.line(surface, self.color, (trail_x, trail_y), center, 3)
