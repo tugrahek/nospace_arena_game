@@ -39,4 +39,4 @@ Reduce enemy movement space and dominate the arena.
 
 ```bash
 pip install pygame
-python qix_like_game.py
+python main.py
